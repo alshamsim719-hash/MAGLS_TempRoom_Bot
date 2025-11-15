@@ -202,7 +202,7 @@ async function sendControlPanel(textChannel, owner, voiceChannel) {
         "🔒 **Lock Room** — قفل الروم",
         "🔓 **Unlock Room** — فتح الروم",
         "👁 **Hide Room** — إخفاء الروم",
-        "💬 **Show Room** — إظهار الروم",
+        "**Show Room** — إظهار الروم",  // بدون إيموجي
         "🚫 **Kick All** — طرد الجميع",
         "❌ **Close Room** — حذف الروم",
       ].join("\n")
@@ -241,11 +241,11 @@ async function sendControlPanel(textChannel, owner, voiceChannel) {
       .setLabel("Hide Room")
       .setStyle(ButtonStyle.Secondary)
       .setEmoji("👁"),
+
     new ButtonBuilder()
       .setCustomId("room_show")
-      .setLabel("Show Room")
+      .setLabel("Show Room")  // بدون إيموجي نهائيًا
       .setStyle(ButtonStyle.Secondary)
-      .setEmoji("💬")
   );
 
   const row4 = new ActionRowBuilder().addComponents(
@@ -405,7 +405,7 @@ client.on("interactionCreate", async (interaction) => {
           ViewChannel: true,
         });
         return interaction.reply({
-          content: "💬 تم إظهار الروم.",
+          content: "تم إظهار الروم.", // بدون إيموجي
           ephemeral: true,
         });
 
