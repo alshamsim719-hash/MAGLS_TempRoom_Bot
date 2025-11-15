@@ -12,6 +12,8 @@ const {
 
 const config = require("./config.json");
 
+const CONTROL_PANEL_CHANNEL_ID = "1439244974842449960"; // ⭐ روم لوحة التحكم الثابتة
+
 // ===== Client Setup =====
 const client = new Client({
   intents: [
@@ -29,45 +31,15 @@ console.log("🚀 Starting MAGLS Temp Room Bot...");
 // Temp Room Maps
 const roomsByOwner = new Map();
 const roomsByVoiceId = new Map();
-const roomsByTextId = new Map();
 
 client.once("clientReady", () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-// ===== Safe Sender With Retry =====
-async function safeSend(textChannel, data, tries = 3) {
-  for (let i = 0; i < tries; i++) {
-    try {
-      if (!textChannel) throw new Error("Channel not ready");
-
-      const perms = textChannel.permissionsFor(
-        textChannel.guild.members.me
-      );
-      if (!perms || !perms.has(PermissionsBitField.Flags.SendMessages))
-        throw new Error("Bot has no send permission");
-
-      return await textChannel.send(data);
-    } catch (err) {
-      console.log(
-        `⚠️ Control panel send retry ${i + 1} failed: ${err.message}`
-      );
-
-      if (i === tries - 1) {
-        console.error("❌ Failed to send control panel after retries.");
-        return null;
-      }
-
-      await new Promise((res) => setTimeout(res, 800));
-    }
-  }
-}
-
 // ===== Create Temp Room =====
 async function createTempRoom(member, lobbyChannel) {
   const guild = member.guild;
 
-  // if already has temp room
   if (roomsByOwner.has(member.id)) {
     const info = roomsByOwner.get(member.id);
     const existing = guild.channels.cache.get(info.voiceChannelId);
@@ -84,7 +56,7 @@ async function createTempRoom(member, lobbyChannel) {
 
   const displayName = member.displayName || member.user.username;
 
-  // ===== Create Voice Channel =====
+  // ===== Create Temp Voice Channel =====
   const voiceChannel = await guild.channels.create({
     name: `👑・MAGLS — ${displayName}`,
     type: ChannelType.GuildVoice,
@@ -120,39 +92,6 @@ async function createTempRoom(member, lobbyChannel) {
           PermissionsBitField.Flags.DeafenMembers,
           PermissionsBitField.Flags.MoveMembers,
           PermissionsBitField.Flags.ManageChannels,
-          PermissionsBitField.Flags.UseApplicationCommands,
-        ],
-      },
-    ],
-  });
-
-  // ===== Create Text Channel =====
-  const textChannel = await guild.channels.create({
-    name: `💬・MAGLS — ${displayName}`,
-    type: ChannelType.GuildText,
-    parent: parentId || null,
-    permissionOverwrites: [
-      {
-        id: guild.roles.everyone,
-        deny: [PermissionsBitField.Flags.ViewChannel],
-      },
-      {
-        id: member.id,
-        allow: [
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.SendMessages,
-          PermissionsBitField.Flags.ReadMessageHistory,
-        ],
-      },
-      {
-        id: client.user.id,
-        allow: [
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.SendMessages,
-          PermissionsBitField.Flags.EmbedLinks,
-          PermissionsBitField.Flags.ReadMessageHistory,
-          PermissionsBitField.Flags.ManageChannels,
-          PermissionsBitField.Flags.UseApplicationCommands,
         ],
       },
     ],
@@ -162,61 +101,56 @@ async function createTempRoom(member, lobbyChannel) {
     guildId: guild.id,
     ownerId: member.id,
     voiceChannelId: voiceChannel.id,
-    textChannelId: textChannel.id,
   };
 
   roomsByOwner.set(member.id, info);
   roomsByVoiceId.set(voiceChannel.id, info);
-  roomsByTextId.set(textChannel.id, info);
 
   await member.voice.setChannel(voiceChannel).catch(() => {});
 
-  // ===== Delay Before Sending Control Panel =====
-  setTimeout(async () => {
-    if (!textChannel) return;
-
-    const perms = textChannel.permissionsFor(
-      textChannel.guild.members.me
-    );
-    if (!perms || !perms.has(PermissionsBitField.Flags.SendMessages)) {
-      console.error("❌ Bot cannot send in text channel!");
-      return;
-    }
-
-    await sendControlPanel(textChannel, member, voiceChannel);
-  }, 2000);
+  // Send panel into fixed control panel room
+  setTimeout(() => {
+    sendControlPanel(member, voiceChannel);
+  }, 1000);
 
   return info;
 }
 
-// ===== Control Panel =====
-async function sendControlPanel(textChannel, owner, voiceChannel) {
+// ===== Send Control Panel to Fixed Channel =====
+async function sendControlPanel(owner, voiceChannel) {
+  const channel = await owner.guild.channels.fetch(CONTROL_PANEL_CHANNEL_ID).catch(() => null);
+
+  if (!channel)
+    return console.error("❌ Cannot find control panel channel.");
+
   const embed = new EmbedBuilder()
     .setTitle("👑 لوحة تحكم الروم المؤقت")
     .setDescription(
       [
         `الروم الخاص بـ **${owner.displayName}**`,
+        `🎤 رومك الصوتي: <#${voiceChannel.id}>`,
         "",
-        "🔇 **Mute All** — كتم الجميع",
-        "🔊 **Unmute All** — فك الكتم",
-        "🔒 **Lock Room** — قفل الروم",
-        "🔓 **Unlock Room** — فتح الروم",
-        "👁 **Hide Room** — إخفاء الروم",
-        "**Show Room** — إظهار الروم",  // بدون إيموجي
-        "🚫 **Kick All** — طرد الجميع",
-        "❌ **Close Room** — حذف الروم",
+        "🔇 **Mute All**",
+        "🔊 **Unmute All**",
+        "🔒 **Lock Room**",
+        "🔓 **Unlock Room**",
+        "👁 **Hide Room**",
+        "💬 **Show Room**",
+        "🚫 **Kick All**",
+        "❌ **Close Room**",
       ].join("\n")
     )
     .setColor(0xf1c40f);
 
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId("room_mute_all")
+      .setCustomId(`mute_${voiceChannel.id}`)
       .setLabel("Mute All")
       .setStyle(ButtonStyle.Danger)
       .setEmoji("🔇"),
+
     new ButtonBuilder()
-      .setCustomId("room_unmute_all")
+      .setCustomId(`unmute_${voiceChannel.id}`)
       .setLabel("Unmute All")
       .setStyle(ButtonStyle.Success)
       .setEmoji("🔊")
@@ -224,45 +158,47 @@ async function sendControlPanel(textChannel, owner, voiceChannel) {
 
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId("room_lock")
-      .setLabel("Lock Room")
+      .setCustomId(`lock_${voiceChannel.id}`)
+      .setLabel("Lock")
       .setStyle(ButtonStyle.Secondary)
       .setEmoji("🔒"),
+
     new ButtonBuilder()
-      .setCustomId("room_unlock")
-      .setLabel("Unlock Room")
+      .setCustomId(`unlock_${voiceChannel.id}`)
+      .setLabel("Unlock")
       .setStyle(ButtonStyle.Secondary)
       .setEmoji("🔓")
   );
 
   const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId("room_hide")
-      .setLabel("Hide Room")
+      .setCustomId(`hide_${voiceChannel.id}`)
+      .setLabel("Hide")
       .setStyle(ButtonStyle.Secondary)
       .setEmoji("👁"),
 
     new ButtonBuilder()
-      .setCustomId("room_show")
-      .setLabel("Show Room")  // بدون إيموجي نهائيًا
+      .setCustomId(`show_${voiceChannel.id}`)
+      .setLabel("Show Room")
       .setStyle(ButtonStyle.Secondary)
   );
 
   const row4 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId("room_kick_all")
+      .setCustomId(`kick_${voiceChannel.id}`)
       .setLabel("Kick All")
       .setStyle(ButtonStyle.Danger)
       .setEmoji("🚫"),
+
     new ButtonBuilder()
-      .setCustomId("room_close")
+      .setCustomId(`close_${voiceChannel.id}`)
       .setLabel("Close Room")
       .setStyle(ButtonStyle.Danger)
       .setEmoji("❌")
   );
 
-  await safeSend(textChannel, {
-    content: `👑 **${owner}** هذه لوحة التحكم الخاصة برومك الصوتي: <#${voiceChannel.id}>`,
+  await channel.send({
+    content: `👑 **${owner}** تحكم برومك الصوتي: <#${voiceChannel.id}>`,
     embeds: [embed],
     components: [row1, row2, row3, row4],
   });
@@ -275,20 +211,17 @@ async function deleteTempRoom(info) {
     if (!guild) return;
 
     const voiceChannel = guild.channels.cache.get(info.voiceChannelId);
-    const textChannel = guild.channels.cache.get(info.textChannelId);
 
     if (voiceChannel) await voiceChannel.delete().catch(() => {});
-    if (textChannel) await textChannel.delete().catch(() => {});
 
     roomsByOwner.delete(info.ownerId);
     roomsByVoiceId.delete(info.voiceChannelId);
-    roomsByTextId.delete(info.textChannelId);
 
     console.log(`🗑️ Temp room deleted for owner ${info.ownerId}`);
   } catch {}
 }
 
-// ===== Voice State Handler =====
+// ===== Voice State =====
 client.on("voiceStateUpdate", async (oldState, newState) => {
   try {
     const guild = newState.guild || oldState.guild;
@@ -299,16 +232,13 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
     const oldChannelId = oldState.channelId;
     const newChannelId = newState.channelId;
 
-    // Member entered lobby
     if (newChannelId === lobbyId && oldChannelId !== lobbyId) {
       const member = newState.member;
       if (!member || member.user.bot) return;
-      const lobbyChannel = newState.channel;
-      await createTempRoom(member, lobbyChannel);
+      await createTempRoom(member, newState.channel);
       return;
     }
 
-    // Member left temp room
     if (oldChannelId && roomsByVoiceId.has(oldChannelId)) {
       const info = roomsByVoiceId.get(oldChannelId);
       if (!oldState.channel) return;
@@ -326,109 +256,71 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
   }
 });
 
-// ===== Button Interactions =====
+// ===== Interaction Handler =====
 client.on("interactionCreate", async (interaction) => {
-  try {
-    if (!interaction.isButton()) return;
+  if (!interaction.isButton()) return;
 
-    const info = roomsByTextId.get(interaction.channelId);
-    if (!info) return;
+  const id = interaction.customId.split("_");
+  const action = id[0];
+  const voiceId = id[1];
 
-    if (interaction.user.id !== info.ownerId) {
-      return interaction.reply({
-        content: "❌ هذه اللوحة خاصة بصاحب الروم فقط.",
-        ephemeral: true,
+  const voiceChannel = interaction.guild.channels.cache.get(voiceId);
+  if (!voiceChannel)
+    return interaction.reply({ content: "❌ الروم غير موجود.", ephemeral: true });
+
+  const member = interaction.guild.members.cache.get(interaction.user.id);
+  const info = roomsByOwner.get(member.id);
+
+  if (!info || info.voiceChannelId !== voiceChannel.id) {
+    return interaction.reply({
+      content: "❌ لا يمكنك التحكم بهذا الروم، لأنه ليس رومك.",
+      ephemeral: true,
+    });
+  }
+
+  const everyone = interaction.guild.roles.everyone;
+
+  switch (action) {
+    case "mute":
+      voiceChannel.members.forEach((m) => {
+        if (m.id !== info.ownerId && !m.user.bot)
+          m.voice.setMute(true).catch(() => {});
       });
-    }
+      return interaction.reply({ content: "🔇 تم كتم الجميع.", ephemeral: true });
 
-    const guild = interaction.guild;
-    const voiceChannel = guild.channels.cache.get(info.voiceChannelId);
-
-    if (!voiceChannel) {
-      return interaction.reply({
-        content: "❌ الروم الصوتي غير موجود.",
-        ephemeral: true,
+    case "unmute":
+      voiceChannel.members.forEach((m) => {
+        if (!m.user.bot) m.voice.setMute(false).catch(() => {});
       });
-    }
+      return interaction.reply({ content: "🔊 تم فك الكتم.", ephemeral: true });
 
-    const everyone = guild.roles.everyone;
+    case "lock":
+      await voiceChannel.permissionOverwrites.edit(everyone, { Connect: false });
+      return interaction.reply({ content: "🔒 تم قفل الروم.", ephemeral: true });
 
-    switch (interaction.customId) {
-      case "room_mute_all":
-        voiceChannel.members.forEach((m) => {
-          if (m.id !== info.ownerId && !m.user.bot)
-            m.voice.setMute(true).catch(() => {});
-        });
-        return interaction.reply({
-          content: "🔇 تم كتم الجميع.",
-          ephemeral: true,
-        });
+    case "unlock":
+      await voiceChannel.permissionOverwrites.edit(everyone, { Connect: true });
+      return interaction.reply({ content: "🔓 تم فتح الروم.", ephemeral: true });
 
-      case "room_unmute_all":
-        voiceChannel.members.forEach((m) => {
-          if (!m.user.bot) m.voice.setMute(false).catch(() => {});
-        });
-        return interaction.reply({
-          content: "🔊 تم فك الكتم.",
-          ephemeral: true,
-        });
+    case "hide":
+      await voiceChannel.permissionOverwrites.edit(everyone, { ViewChannel: false });
+      return interaction.reply({ content: "👁 تم إخفاء الروم.", ephemeral: true });
 
-      case "room_lock":
-        await voiceChannel.permissionOverwrites.edit(everyone, {
-          Connect: false,
-        });
-        return interaction.reply({
-          content: "🔒 تم قفل الروم.",
-          ephemeral: true,
-        });
+    case "show":
+      await voiceChannel.permissionOverwrites.edit(everyone, { ViewChannel: true });
+      return interaction.reply({ content: "💬 تم إظهار الروم.", ephemeral: true });
 
-      case "room_unlock":
-        await voiceChannel.permissionOverwrites.edit(everyone, {
-          Connect: true,
-        });
-        return interaction.reply({
-          content: "🔓 تم فتح الروم.",
-          ephemeral: true,
-        });
+    case "kick":
+      voiceChannel.members.forEach((m) => {
+        if (m.id !== info.ownerId && !m.user.bot)
+          m.voice.disconnect().catch(() => {});
+      });
+      return interaction.reply({ content: "🚫 تم طرد الجميع.", ephemeral: true });
 
-      case "room_hide":
-        await voiceChannel.permissionOverwrites.edit(everyone, {
-          ViewChannel: false,
-        });
-        return interaction.reply({
-          content: "👁 تم إخفاء الروم.",
-          ephemeral: true,
-        });
-
-      case "room_show":
-        await voiceChannel.permissionOverwrites.edit(everyone, {
-          ViewChannel: true,
-        });
-        return interaction.reply({
-          content: "تم إظهار الروم.", // بدون إيموجي
-          ephemeral: true,
-        });
-
-      case "room_kick_all":
-        voiceChannel.members.forEach((m) => {
-          if (m.id !== info.ownerId && !m.user.bot)
-            m.voice.disconnect().catch(() => {});
-        });
-        return interaction.reply({
-          content: "🚫 تم طرد الجميع.",
-          ephemeral: true,
-        });
-
-      case "room_close":
-        await interaction.reply({
-          content: "❌ تم حذف الروم بالكامل.",
-          ephemeral: true,
-        });
-        await deleteTempRoom(info);
-        return;
-    }
-  } catch (err) {
-    console.error("Error in interactionCreate:", err);
+    case "close":
+      await interaction.reply({ content: "❌ تم حذف الروم.", ephemeral: true });
+      await deleteTempRoom(info);
+      return;
   }
 });
 
